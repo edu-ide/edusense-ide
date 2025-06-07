@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authserver
+  labels:
+    app: authserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authserver
+  template:
+    metadata:
+      labels:
+        app: authserver
+    spec:
+      initContainers:
+      - name: wait-for-config-server
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nc -z config-server 8888; do echo waiting for config-server; sleep 2; done']
+        env:
+        - name: SPRING_APPLICATION_NAME
+          value: "authserver"
+      containers:
+      - name: authserver
+        image: authserver:latest
+        ports:
+        - containerPort: 8881
+          name: http
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "k8s,oauth2"
+        - name: SPRING_DEVTOOLS_RESTART_ENABLED
+          value: "true"
+        - name: SPRING_DEVTOOLS_LIVERELOAD_ENABLED
+          value: "true"
+        - name: SPRING_CONFIG_IMPORT
+          value: "optional:configserver:http://config-server:8888"
+        - name: SPRING_APPLICATION_NAME
+          value: "authserver"
+        envFrom:
+        - configMapRef:
+            name: common-config
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8881
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8881
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 10
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edusense
+  labels:
+    app: edusense
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: edusense
+  template:
+    metadata:
+      labels:
+        app: edusense
+    spec:
+      initContainers:
+      - name: wait-for-config-server
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nc -z config-server 8888; do echo waiting for config-server; sleep 2; done']
+      containers:
+      - name: edusense
+        image: edusense:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "k8s"
+        - name: SPRING_CONFIG_IMPORT
+          value: "optional:configserver:http://config-server:8888"
+        envFrom:
+        - configMapRef:
+            name: common-config
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 10
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: upload-storage
+          mountPath: /app/uploads
+      volumes:
+      - name: upload-storage
+        emptyDir: {}
